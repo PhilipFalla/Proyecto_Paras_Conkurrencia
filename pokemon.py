@@ -10,6 +10,7 @@ import requests
 import time
 import os
 import threading
+import multiprocessing as mp
 
 def download_pokemon(n=150, dir_name='pokemon_dataset'):
     '''
@@ -41,8 +42,6 @@ def download_pokemon(n=150, dir_name='pokemon_dataset'):
     os.makedirs(dir_name, exist_ok=True)
     base_url = 'https://raw.githubusercontent.com/HybridShivam/Pokemon/master/assets/imagesHQ' 
 
-    # print(f'\nDescargando {n} pokemones...\n')
-
     threads = []
 
     start_time = time.time()
@@ -68,47 +67,48 @@ def download_pokemon(n=150, dir_name='pokemon_dataset'):
     
     return total_time
 
-
-def process_pokemon(dir_origin='pokemon_dataset', dir_name='pokemon_processed'):
-    '''
-    Procesa las imágenes aplicando múltiples transformaciones.
-    '''
+def process_pokemon(dir_origin='pokemon_dataset', dir_name='pokemon_processed', max_workers=8):
+    import os, time
 
     os.makedirs(dir_name, exist_ok=True)
     images = sorted([f for f in os.listdir(dir_origin) if f.endswith('.png')])
     total = len(images)
-    
-    print(f'\nProcesando {total} imágenes...\n')
+
+    print(f'\nProcesando {total} imágenes con {max_workers} cores...\n')
     start_time = time.time()
-    
-    for image in tqdm(images, desc='Procesando', unit='img'):
-        try:
-            path_origin = os.path.join(dir_origin, image)
-            img = Image.open(path_origin).convert('RGB')
-            
-            # Transformaciones a imagen (CPU-intensive task)
-            img = img.filter(ImageFilter.GaussianBlur(radius=10))
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.5)
-            img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
-            img_inv = ImageOps.invert(img)
-            img_inv = img_inv.filter(ImageFilter.GaussianBlur(radius=5))
-            width, height = img_inv.size
-            img_inv = img_inv.resize((width * 2, height * 2), Image.LANCZOS)
-            img_inv = img_inv.resize((width, height), Image.LANCZOS)
-        
-            saving_path = os.path.join(dir_name, image)
-            img_inv.save(saving_path, quality=95)
-            
-        except Exception as e:
-            tqdm.write(f'  Error procesando {image}: {e}')
-    
+
+    with mp.Pool(processes=max_workers) as pool:
+        for _ in tqdm(pool.imap_unordered(process_worker, images), total=total, desc='Procesando', unit='img'):
+            pass  # solo para actualizar la barra de progreso
+
     total_time = time.time() - start_time
-    print(f'  Procesamiento completado en {total_time:.2f} segundos')
-    print(f'  Promedio: {total_time/total:.2f} s/img\n')
-    
+    print(f'\nProcesamiento completado en {total_time:.2f} segundos')
+    print(f'Promedio: {total_time/total:.2f} s/img\n')
     return total_time
 
+def process_worker(image, dir_origin='pokemon_dataset', dir_name='pokemon_processed'):
+    from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+    import os
+
+    try:
+        path_origin = os.path.join(dir_origin, image)
+        img = Image.open(path_origin).convert('RGB')
+        
+        img = img.filter(ImageFilter.GaussianBlur(radius=10))
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.5)
+        img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        img_inv = ImageOps.invert(img)
+        img_inv = img_inv.filter(ImageFilter.GaussianBlur(radius=5))
+        width, height = img_inv.size
+        img_inv = img_inv.resize((width * 2, height * 2), Image.LANCZOS)
+        img_inv = img_inv.resize((width, height), Image.LANCZOS)
+
+        saving_path = os.path.join(dir_name, image)
+        img_inv.save(saving_path, quality=95)
+
+    except Exception as e:
+        print(f'  Error procesando {image}: {e}')
 
 if __name__ == '__main__':
 
