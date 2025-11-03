@@ -9,20 +9,19 @@ from tqdm import tqdm
 import requests
 import time
 import os
-
+import threading
 
 def download_pokemon(n=150, dir_name='pokemon_dataset'):
     '''
     Descarga las imágenes de los primeros n Pokemones.
     '''
 
-    os.makedirs(dir_name, exist_ok=True)
-    base_url = 'https://raw.githubusercontent.com/HybridShivam/Pokemon/master/assets/imagesHQ' 
-
     print(f'\nDescargando {n} pokemones...\n')
-    start_time = time.time()
-    
-    for i in tqdm(range(1, n + 1), desc='Descargando', unit='img'):
+
+    pbar = tqdm(total=n, desc="Descargando", unit="img")
+
+    # Closure para que se comparta dir_name y base_url en el contexto, eliminando el overhead de 2 argumentos adicionales
+    def image_worker(i):
         file_name = f'{i:03d}.png'
         url = f'{base_url}/{file_name}'
         
@@ -33,9 +32,35 @@ def download_pokemon(n=150, dir_name='pokemon_dataset'):
             img_path = os.path.join(dir_name, file_name)
             with open(img_path, 'wb') as f:
                 f.write(response.content)
-                
+
         except requests.exceptions.RequestException as e:
             tqdm.write(f'  Error descargando {file_name}: {e}')
+        
+        pbar.update(1)
+
+    os.makedirs(dir_name, exist_ok=True)
+    base_url = 'https://raw.githubusercontent.com/HybridShivam/Pokemon/master/assets/imagesHQ' 
+
+    # print(f'\nDescargando {n} pokemones...\n')
+
+    threads = []
+
+    start_time = time.time()
+    
+    
+    for i in range(1, n + 1):
+        # Crear thread
+        t = threading.Thread(
+            target=image_worker,  # Función a ejecutar
+            args=(i,) # Argumentos de la función
+        )
+        threads.append(t)
+        t.start()  # Iniciar el thread
+    
+    for t in threads:
+        t.join()
+    
+    pbar.close()
     
     total_time = time.time() - start_time
     print(f'  Descarga completada en {total_time:.2f} segundos')
@@ -87,13 +112,15 @@ def process_pokemon(dir_origin='pokemon_dataset', dir_name='pokemon_processed'):
 
 if __name__ == '__main__':
 
+    n = 151
+
     print('='*60)
     print_intro()
     print('   POKEMON IMAGE PROCESSING PIPELINE')
     print('='*60)
     
     # Fase 1: Descarga (I/O Bound)
-    download_time = download_pokemon()
+    download_time = download_pokemon(n)
     
     # Fase 2: Procesamiento (CPU Bound)
     processing_time = process_pokemon()
